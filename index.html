@@ -713,6 +713,59 @@ input[type="file"] { display: none; }
 
 .cal-day.clickable { cursor: pointer; }
 .cal-day.clickable:active { opacity: 0.7; }
+
+/* Date Navigator */
+.date-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.date-nav-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: none;
+  border: none;
+  color: var(--text2);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.date-nav-btn:active { background: var(--surface2); }
+.date-nav-btn:disabled { opacity: 0.2; }
+
+.date-nav-label {
+  font-size: 14px;
+  color: var(--text2);
+  font-weight: 500;
+}
+
+.today-chip {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-dim);
+  border: none;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+
+.today-chip:active { opacity: 0.7; }
+
+.run-hint {
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+  margin-bottom: 10px;
+}
 </style>
 </head>
 <body>
@@ -721,7 +774,12 @@ input[type="file"] { display: none; }
   <div class="header">
     <div class="header-left">
       <h1 id="greeting"></h1>
-      <div class="date" id="dateStr"></div>
+      <div class="date-nav">
+        <button class="date-nav-btn" onclick="navigateDate(-1)">‹</button>
+        <span class="date-nav-label" id="dateStr"></span>
+        <button class="date-nav-btn" id="dateNextBtn" onclick="navigateDate(1)">›</button>
+        <button class="today-chip" id="todayBtn" onclick="goToToday()" style="display:none">Сегодня</button>
+      </div>
     </div>
     <button class="settings-btn" onclick="showAnalytics()">⚙</button>
   </div>
@@ -874,6 +932,7 @@ const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','
 let data = { workouts:{}, measurements:{} };
 let calMonth, calYear;
 let openExercise = null;
+let selectedDate = new Date();
 
 // ========== STORAGE ==========
 function loadData() {
@@ -938,11 +997,11 @@ function getSchedule(date) {
   return SCHEDULE[dow];
 }
 
-function getLastWorkout(exerciseId) {
+function getLastWorkout(exerciseId, beforeDate) {
   const keys = Object.keys(data.workouts).sort().reverse();
-  const today = todayStr();
+  const cutoff = beforeDate || todayStr();
   for (const key of keys) {
-    if (key >= today) continue;
+    if (key >= cutoff) continue;
     const w = data.workouts[key];
     if (w.exercises && w.exercises[exerciseId] && w.exercises[exerciseId].sets && w.exercises[exerciseId].sets.length > 0) {
       return w.exercises[exerciseId].sets;
@@ -959,6 +1018,18 @@ function formatLastSets(sets) {
     return `${s.reps} повт`;
   });
   return 'Прошлый раз: ' + parts.join(', ');
+}
+
+function getLastRun(beforeDate) {
+  const keys = Object.keys(data.workouts).sort().reverse();
+  for (const key of keys) {
+    if (key >= beforeDate) continue;
+    const w = data.workouts[key];
+    if (w.run && w.run.distance > 0) {
+      return w.run;
+    }
+  }
+  return null;
 }
 
 function getStreak() {
@@ -988,33 +1059,42 @@ function getStreak() {
 
 // ========== RENDER ==========
 function render() {
-  const today = new Date();
-  const dow = today.getDay();
-  const schedule = getSchedule(today);
+  const viewDate = new Date(selectedDate);
+  const dow = viewDate.getDay();
+  const schedule = getSchedule(viewDate);
+  const dStr = dateStr(viewDate);
   const tStr = todayStr();
+  const isToday = dStr === tStr;
 
   // Header
   document.getElementById('greeting').textContent = schedule.name;
-  document.getElementById('dateStr').textContent = `${DAY_NAMES[dow]}, ${today.getDate()} ${MONTH_NAMES[today.getMonth()].toLowerCase()}`;
+  const dateLabel = `${DAY_NAMES[dow]}, ${viewDate.getDate()} ${MONTH_NAMES[viewDate.getMonth()].toLowerCase()}`;
+  document.getElementById('dateStr').textContent = isToday ? dateLabel + ' · сегодня' : dateLabel;
+  document.getElementById('todayBtn').style.display = isToday ? 'none' : 'inline-block';
+  document.getElementById('dateNextBtn').disabled = isToday;
 
-  // Banner - check yesterday
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yStr = dateStr(yesterday);
-  const yData = data.workouts[yStr];
-  const ySchedule = getSchedule(yesterday);
+  // Banner - check yesterday (only when viewing today)
   const banner = document.getElementById('banner');
-  const startDate = data._startDate || todayStr();
-  if (yStr >= startDate && ySchedule && !ySchedule.isMeasure && (!yData || !yData.completed)) {
-    banner.textContent = `⚠ Вчера пропущено: ${ySchedule.name}`;
-    banner.classList.add('show');
+  if (isToday) {
+    const yesterday = new Date(viewDate);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yStr = dateStr(yesterday);
+    const yData = data.workouts[yStr];
+    const ySchedule = getSchedule(yesterday);
+    const startDate = data._startDate || tStr;
+    if (yStr >= startDate && ySchedule && !ySchedule.isMeasure && (!yData || !yData.completed)) {
+      banner.textContent = `⚠ Вчера пропущено: ${ySchedule.name}`;
+      banner.classList.add('show');
+    } else {
+      banner.classList.remove('show');
+    }
   } else {
     banner.classList.remove('show');
   }
 
-  // Notification card
+  // Notification card (only when viewing today)
   const notifCard = document.getElementById('notifCard');
-  if ('Notification' in window && Notification.permission === 'default') {
+  if (isToday && 'Notification' in window && Notification.permission === 'default') {
     notifCard.classList.add('show');
   } else {
     notifCard.classList.remove('show');
@@ -1022,12 +1102,12 @@ function render() {
 
   // Workout
   const container = document.getElementById('workoutContainer');
-  const workoutData = data.workouts[tStr] || { exercises:{}, completed:false };
+  const workoutData = data.workouts[dStr] || { exercises:{}, completed:false };
 
   if (schedule.isMeasure) {
-    container.innerHTML = renderMeasurePage(tStr);
+    container.innerHTML = renderMeasurePage(dStr);
   } else {
-    container.innerHTML = renderWorkoutCard(schedule, workoutData, tStr);
+    container.innerHTML = renderWorkoutCard(schedule, workoutData, dStr);
   }
 }
 
@@ -1064,7 +1144,7 @@ function renderWorkoutCard(schedule, workoutData, dateKey) {
 
   for (const ex of schedule.exercises) {
     const exData = workoutData.exercises[ex.id] || { done:false, sets:[] };
-    const lastSets = getLastWorkout(ex.id);
+    const lastSets = getLastWorkout(ex.id, dateKey);
     const hint = formatLastSets(lastSets);
     const isOpen = openExercise === ex.id;
 
@@ -1074,7 +1154,7 @@ function renderWorkoutCard(schedule, workoutData, dateKey) {
         <div class="ex-name">${ex.name}</div>
         <div class="ex-target">${ex.targetSets}×${ex.targetReps}</div>
       </div>
-      ${hint ? `<div class="ex-hint ${isOpen?'show':''}">${hint}</div>` : ''}
+      ${hint ? `<div class="ex-hint show">${hint}</div>` : ''}
       <div class="sets-panel ${isOpen?'open':''}">
         ${renderSets(ex, exData, dateKey)}
       </div>
@@ -1085,8 +1165,10 @@ function renderWorkoutCard(schedule, workoutData, dateKey) {
 
   if (schedule.hasRun) {
     const runData = workoutData.run || {};
+    const lastRun = getLastRun(dateKey);
     html += `<div class="run-section">
       <h3>🏃 Бег</h3>
+      ${lastRun ? `<div class="run-hint">Прошлый раз: ${lastRun.distance} км${lastRun.pace ? ' · темп ' + lastRun.pace : ''}</div>` : ''}
       <div class="run-fields">
         <div class="run-field">
           <label>Дистанция (км)</label>
@@ -1217,7 +1299,7 @@ function addSet(exId, dateKey, unit) {
     if (lastSet) {
       sets.push({ weight: lastSet.weight, reps: lastSet.reps });
     } else {
-      const prev = getLastWorkout(exId);
+      const prev = getLastWorkout(exId, dateKey);
       if (prev && prev.length > 0) {
         sets.push({ weight: prev[0].weight, reps: prev[0].reps });
       } else {
@@ -1267,6 +1349,24 @@ function saveMeasures(dateKey) {
     saveData();
     render();
   }
+}
+
+// ========== DATE NAVIGATION ==========
+function navigateDate(offset) {
+  selectedDate.setDate(selectedDate.getDate() + offset);
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const sel = new Date(selectedDate);
+  sel.setHours(0,0,0,0);
+  if (sel > today) selectedDate = new Date();
+  openExercise = null;
+  render();
+}
+
+function goToToday() {
+  selectedDate = new Date();
+  openExercise = null;
+  render();
 }
 
 // ========== ANALYTICS ==========
@@ -1638,6 +1738,10 @@ function checkAndNotify() {
 
 // ========== SERVICE WORKER ==========
 if ('serviceWorker' in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) { refreshing = true; location.reload(); }
+  });
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
@@ -1655,7 +1759,7 @@ setInterval(checkAndNotify, 30 * 60 * 1000);
 // Re-render at midnight
 setInterval(() => {
   const now = new Date();
-  if (now.getHours() === 0 && now.getMinutes() === 0) render();
+  if (now.getHours() === 0 && now.getMinutes() === 0) { selectedDate = new Date(); render(); }
 }, 60000);
 </script>
 </body>

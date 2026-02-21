@@ -719,17 +719,18 @@ input[type="file"] { display: none; }
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-top: 2px;
+  margin-top: 4px;
+  margin-left: -4px;
 }
 
 .date-nav-btn {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: none;
   border: none;
   color: var(--text2);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   cursor: pointer;
   display: flex;
@@ -1020,6 +1021,16 @@ function formatLastSets(sets) {
   return 'Прошлый раз: ' + parts.join(', ');
 }
 
+function formatDoneSets(sets) {
+  if (!sets || sets.length === 0) return '';
+  return sets.map(s => {
+    if (s.seconds) return `${s.seconds}с`;
+    if (s.weight > 0) return `${s.weight}кг×${s.reps}`;
+    if (s.reps > 0) return `${s.reps} повт`;
+    return '';
+  }).filter(Boolean).join(', ');
+}
+
 function getLastRun(beforeDate) {
   const keys = Object.keys(data.workouts).sort().reverse();
   for (const key of keys) {
@@ -1112,9 +1123,12 @@ function render() {
 }
 
 function renderWorkoutCard(schedule, workoutData, dateKey) {
-  const allDone = schedule.exercises.every(ex => workoutData.exercises[ex.id]?.done);
-  const runDone = schedule.hasRun ? (workoutData.run?.distance > 0) : true;
-  const isCompleted = allDone && runDone;
+  const pendingExercises = schedule.exercises.filter(ex => !workoutData.exercises[ex.id]?.done);
+  const doneExercises = schedule.exercises.filter(ex => workoutData.exercises[ex.id]?.done);
+  const runFilled = schedule.hasRun && workoutData.run?.distance > 0 && workoutData.run?.done !== false;
+  const allExDone = doneExercises.length === schedule.exercises.length;
+  const runDone = schedule.hasRun ? runFilled : true;
+  const isCompleted = allExDone && runDone;
 
   if (isCompleted && !workoutData.completed) {
     workoutData.completed = true;
@@ -1139,31 +1153,34 @@ function renderWorkoutCard(schedule, workoutData, dateKey) {
       <div class="workout-status">
         <div class="check-circle ${isCompleted?'done':''}">✓</div>
       </div>
-    </div>
-    <div class="exercise-list">`;
-
-  for (const ex of schedule.exercises) {
-    const exData = workoutData.exercises[ex.id] || { done:false, sets:[] };
-    const lastSets = getLastWorkout(ex.id, dateKey);
-    const hint = formatLastSets(lastSets);
-    const isOpen = openExercise === ex.id;
-
-    html += `<div class="exercise-item">
-      <div class="exercise-row" onclick="toggleExpand('${ex.id}','${dateKey}')">
-        <div class="ex-check ${exData.done?'done':''}" onclick="event.stopPropagation();toggleDone('${ex.id}','${dateKey}')">✓</div>
-        <div class="ex-name">${ex.name}</div>
-        <div class="ex-target">${ex.targetSets}×${ex.targetReps}</div>
-      </div>
-      ${hint ? `<div class="ex-hint show">${hint}</div>` : ''}
-      <div class="sets-panel ${isOpen?'open':''}">
-        ${renderSets(ex, exData, dateKey)}
-      </div>
     </div>`;
+
+  // Pending exercises
+  if (pendingExercises.length > 0) {
+    html += `<div class="exercise-list">`;
+    for (const ex of pendingExercises) {
+      const exData = workoutData.exercises[ex.id] || { done:false, sets:[] };
+      const lastSets = getLastWorkout(ex.id, dateKey);
+      const hint = formatLastSets(lastSets);
+      const isOpen = openExercise === ex.id;
+
+      html += `<div class="exercise-item">
+        <div class="exercise-row" onclick="toggleExpand('${ex.id}','${dateKey}')">
+          <div class="ex-check" onclick="event.stopPropagation();toggleDone('${ex.id}','${dateKey}')">✓</div>
+          <div class="ex-name">${ex.name}</div>
+          <div class="ex-target">${ex.targetSets}×${ex.targetReps}</div>
+        </div>
+        ${hint ? `<div class="ex-hint show">${hint}</div>` : ''}
+        <div class="sets-panel ${isOpen?'open':''}">
+          ${renderSets(ex, exData, dateKey)}
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
   }
 
-  html += `</div>`;
-
-  if (schedule.hasRun) {
+  // Run section (in main card when not done)
+  if (schedule.hasRun && !runFilled) {
     const runData = workoutData.run || {};
     const lastRun = getLastRun(dateKey);
     html += `<div class="run-section">
@@ -1172,12 +1189,12 @@ function renderWorkoutCard(schedule, workoutData, dateKey) {
       <div class="run-fields">
         <div class="run-field">
           <label>Дистанция (км)</label>
-          <input type="number" inputmode="decimal" step="0.1" value="${runData.distance||''}" 
+          <input type="number" inputmode="decimal" step="0.1" value="${runData.distance||''}"
             onchange="saveRun('${dateKey}','distance',this.value)" placeholder="2.0">
         </div>
         <div class="run-field">
           <label>Темп (мин/км)</label>
-          <input type="text" inputmode="text" value="${runData.pace||''}" 
+          <input type="text" inputmode="text" value="${runData.pace||''}"
             onchange="saveRun('${dateKey}','pace',this.value)" placeholder="5:00">
         </div>
       </div>
@@ -1185,6 +1202,40 @@ function renderWorkoutCard(schedule, workoutData, dateKey) {
   }
 
   html += `</div>`;
+
+  // Completed section
+  if (doneExercises.length > 0 || runFilled) {
+    html += `<div class="completed-section">
+      <div class="completed-title">Выполнено</div>
+      <div class="workout-card"><div class="exercise-list">`;
+
+    for (const ex of doneExercises) {
+      const exData = workoutData.exercises[ex.id];
+      const setsStr = formatDoneSets(exData.sets);
+
+      html += `<div class="exercise-item">
+        <div class="exercise-row" onclick="toggleDone('${ex.id}','${dateKey}')">
+          <div class="ex-check done">✓</div>
+          <div class="ex-name">${ex.name}</div>
+        </div>
+        ${setsStr ? `<div class="ex-hint show" style="color:var(--text3);">${setsStr}</div>` : ''}
+      </div>`;
+    }
+
+    if (runFilled) {
+      const run = workoutData.run;
+      html += `<div class="exercise-item">
+        <div class="exercise-row" onclick="toggleRunDone('${dateKey}')">
+          <div class="ex-check done">✓</div>
+          <div class="ex-name">🏃 Бег</div>
+          <div class="ex-target">${run.distance} км${run.pace ? ' · ' + run.pace : ''}</div>
+        </div>
+      </div>`;
+    }
+
+    html += `</div></div></div>`;
+  }
+
   return html;
 }
 
@@ -1327,6 +1378,19 @@ function saveRun(dateKey, field, value) {
   if (!data.workouts[dateKey]) data.workouts[dateKey] = { exercises:{}, completed:false };
   if (!data.workouts[dateKey].run) data.workouts[dateKey].run = {};
   data.workouts[dateKey].run[field] = field === 'distance' ? parseFloat(value) || 0 : value;
+  // Auto-mark run as done when distance is entered
+  if (data.workouts[dateKey].run.distance > 0) {
+    data.workouts[dateKey].run.done = true;
+  } else {
+    data.workouts[dateKey].run.done = false;
+  }
+  saveData();
+  render();
+}
+
+function toggleRunDone(dateKey) {
+  if (!data.workouts[dateKey] || !data.workouts[dateKey].run) return;
+  data.workouts[dateKey].run.done = !data.workouts[dateKey].run.done;
   saveData();
   render();
 }

@@ -767,6 +767,33 @@ input[type="file"] { display: none; }
   font-weight: 500;
   margin-bottom: 10px;
 }
+
+.done-divider {
+  height: 1px;
+  background: var(--surface2);
+  margin: 4px 12px 0;
+}
+
+.done-section {
+  opacity: 0.45;
+}
+
+.run-done-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: transform 0.15s;
+}
+
+.run-done-btn:active { transform: scale(0.97); }
 </style>
 </head>
 <body>
@@ -1189,25 +1216,23 @@ function renderWorkoutCard(schedule, workoutData, dateKey) {
       <div class="run-fields">
         <div class="run-field">
           <label>Дистанция (км)</label>
-          <input type="number" inputmode="decimal" step="0.1" value="${runData.distance||''}"
+          <input id="runDistance" type="number" inputmode="decimal" step="0.1" value="${runData.distance||''}"
             onchange="saveRun('${dateKey}','distance',this.value)" placeholder="2.0">
         </div>
         <div class="run-field">
           <label>Темп (мин/км)</label>
-          <input type="text" inputmode="text" value="${runData.pace||''}"
+          <input id="runPace" type="text" inputmode="text" value="${runData.pace||''}"
             onchange="saveRun('${dateKey}','pace',this.value)" placeholder="5:00">
         </div>
       </div>
+      <button class="run-done-btn" onclick="markRunDone('${dateKey}')">Записать</button>
     </div>`;
   }
 
-  html += `</div>`;
-
-  // Completed section
+  // Done section (inside same card, below divider)
   if (doneExercises.length > 0 || runFilled) {
-    html += `<div class="completed-section">
-      <div class="completed-title">Выполнено</div>
-      <div class="workout-card"><div class="exercise-list">`;
+    html += `<div class="done-divider"></div>`;
+    html += `<div class="done-section"><div class="exercise-list">`;
 
     for (const ex of doneExercises) {
       const exData = workoutData.exercises[ex.id];
@@ -1233,9 +1258,10 @@ function renderWorkoutCard(schedule, workoutData, dateKey) {
       </div>`;
     }
 
-    html += `</div></div></div>`;
+    html += `</div></div>`;
   }
 
+  html += `</div>`;
   return html;
 }
 
@@ -1378,11 +1404,18 @@ function saveRun(dateKey, field, value) {
   if (!data.workouts[dateKey]) data.workouts[dateKey] = { exercises:{}, completed:false };
   if (!data.workouts[dateKey].run) data.workouts[dateKey].run = {};
   data.workouts[dateKey].run[field] = field === 'distance' ? parseFloat(value) || 0 : value;
-  // Auto-mark run as done when distance is entered
+  saveData();
+}
+
+function markRunDone(dateKey) {
+  const dist = document.getElementById('runDistance');
+  const pace = document.getElementById('runPace');
+  if (!data.workouts[dateKey]) data.workouts[dateKey] = { exercises:{}, completed:false };
+  if (!data.workouts[dateKey].run) data.workouts[dateKey].run = {};
+  if (dist) data.workouts[dateKey].run.distance = parseFloat(dist.value) || 0;
+  if (pace) data.workouts[dateKey].run.pace = pace.value;
   if (data.workouts[dateKey].run.distance > 0) {
     data.workouts[dateKey].run.done = true;
-  } else {
-    data.workouts[dateKey].run.done = false;
   }
   saveData();
   render();

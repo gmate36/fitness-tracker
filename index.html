@@ -600,6 +600,119 @@ input[type="file"] { display: none; }
 }
 
 .workout-card { animation: slideIn 0.3s ease; }
+
+/* Day Detail Modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 100;
+  align-items: flex-end;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.modal-overlay.open { display: flex; }
+
+.modal-sheet {
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-height: 75vh;
+  overflow-y: auto;
+  padding: 20px 16px calc(var(--safe-bottom) + 20px);
+  animation: sheetUp 0.3s ease;
+}
+
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.modal-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text3);
+  margin: 0 auto 16px;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.modal-subtitle {
+  font-size: 13px;
+  color: var(--text2);
+  margin-bottom: 16px;
+}
+
+.modal-ex {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.modal-ex-name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-ex-sets {
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.modal-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.modal-badge.done { background: var(--green-dim); color: var(--green); }
+.modal-badge.missed { background: rgba(255,71,87,0.15); color: var(--red); }
+
+/* Records */
+.record-card {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.record-name { font-size: 14px; font-weight: 500; }
+.record-val { font-size: 16px; font-weight: 800; color: var(--accent); }
+.record-date { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+.test-notif-btn {
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--text3);
+  color: var(--text2);
+  font-family: 'Outfit', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.test-notif-btn:active { transform: scale(0.97); }
+
+.cal-day.clickable { cursor: pointer; }
+.cal-day.clickable:active { opacity: 0.7; }
 </style>
 </head>
 <body>
@@ -637,6 +750,19 @@ input[type="file"] { display: none; }
       <button class="back-btn" style="margin:0;font-size:20px;" onclick="calNext()">›</button>
     </div>
     <div class="calendar-grid" id="calGrid"></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;">
+      <span>🟢 выполнено</span><span>🔴 пропущено</span><span>🟠 сегодня</span>
+    </div>
+  </div>
+
+  <div class="analytics-section">
+    <h3>Личные рекорды</h3>
+    <div id="recordsContainer"></div>
+  </div>
+
+  <div class="analytics-section">
+    <h3>Лучшие замеры</h3>
+    <div id="bestMeasuresContainer"></div>
   </div>
 
   <div class="analytics-section">
@@ -651,6 +777,24 @@ input[type="file"] { display: none; }
       <button class="action-btn" onclick="document.getElementById('importFile').click()">📥 Импорт</button>
       <input type="file" id="importFile" accept=".json" onchange="importData(event)">
     </div>
+  </div>
+
+  <div class="analytics-section">
+    <h3>Уведомления</h3>
+    <div style="background:var(--surface);border-radius:var(--radius);padding:16px;">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px;" id="notifStatus"></div>
+      <button class="test-notif-btn" onclick="testNotification()">🔔 Тест уведомления</button>
+    </div>
+  </div>
+</div>
+
+<!-- Day Detail Modal -->
+<div class="modal-overlay" id="dayModal" onclick="closeDayModal(event)">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-subtitle" id="modalSubtitle"></div>
+    <div id="modalContent"></div>
   </div>
 </div>
 
@@ -820,7 +964,7 @@ function formatLastSets(sets) {
 function getStreak() {
   let streak = 0;
   const d = new Date();
-  // Check if today is done
+  const start = data._startDate || todayStr();
   const todayData = data.workouts[todayStr()];
   if (todayData && todayData.completed) {
     streak = 1;
@@ -830,6 +974,7 @@ function getStreak() {
   }
   while (true) {
     const ds = dateStr(d);
+    if (ds < start) break;
     const w = data.workouts[ds];
     if (w && w.completed) {
       streak++;
@@ -859,7 +1004,8 @@ function render() {
   const yData = data.workouts[yStr];
   const ySchedule = getSchedule(yesterday);
   const banner = document.getElementById('banner');
-  if (ySchedule && !ySchedule.isMeasure && (!yData || !yData.completed)) {
+  const startDate = data._startDate || todayStr();
+  if (yStr >= startDate && ySchedule && !ySchedule.isMeasure && (!yData || !yData.completed)) {
     banner.textContent = `⚠ Вчера пропущено: ${ySchedule.name}`;
     banner.classList.add('show');
   } else {
@@ -1149,6 +1295,23 @@ function renderAnalytics() {
   
   // Stats
   renderStats();
+  
+  // Records
+  renderRecords();
+  
+  // Best measures
+  renderBestMeasures();
+  
+  // Notification status
+  const status = document.getElementById('notifStatus');
+  if ('Notification' in window) {
+    const perm = Notification.permission;
+    status.textContent = perm === 'granted' ? '✅ Уведомления включены' : 
+                          perm === 'denied' ? '❌ Уведомления заблокированы' : 
+                          '⏳ Разрешение не запрошено';
+  } else {
+    status.textContent = '❌ Браузер не поддерживает уведомления';
+  }
 }
 
 function renderCalendar() {
@@ -1181,14 +1344,19 @@ function renderCalendar() {
     const isToday = ds === todayS;
     const isFuture = dt > today;
     const w = data.workouts[ds];
+    const start = data._startDate || todayS;
     
     let cls = 'cal-day';
     if (isToday) cls += ' today';
     if (isFuture) cls += ' future';
-    else if (w && w.completed) cls += ' done';
-    else if (!isFuture && ds !== todayS && dt >= new Date(2026, 1, 21)) cls += ' missed';
+    else if (w && w.completed) cls += ' done clickable';
+    else if (!isFuture && ds !== todayS && ds >= start) cls += ' missed';
     
-    html += `<div class="${cls}">${d}</div>`;
+    if (w && w.completed) {
+      html += `<div class="${cls}" onclick="openDayModal('${ds}')">${d}</div>`;
+    } else {
+      html += `<div class="${cls}">${d}</div>`;
+    }
   }
   
   grid.innerHTML = html;
@@ -1232,7 +1400,213 @@ function renderStats() {
   `;
 }
 
-// ========== NOTIFICATIONS ==========
+// ========== PERSONAL RECORDS ==========
+function renderRecords() {
+  const container = document.getElementById('recordsContainer');
+  const records = {};
+  
+  // Go through all workouts and find best sets per exercise
+  for (const [dateKey, w] of Object.entries(data.workouts)) {
+    if (!w.exercises) continue;
+    for (const [exId, exData] of Object.entries(w.exercises)) {
+      if (!exData.sets) continue;
+      for (const s of exData.sets) {
+        if (s.weight > 0 && s.reps > 0) {
+          const key = exId;
+          if (!records[key] || s.weight > records[key].weight || 
+              (s.weight === records[key].weight && s.reps > records[key].reps)) {
+            records[key] = { weight: s.weight, reps: s.reps, date: dateKey };
+          }
+        }
+        if (s.seconds > 0) {
+          const key = exId + '_time';
+          if (!records[key] || s.seconds > records[key].seconds) {
+            records[key] = { seconds: s.seconds, date: dateKey };
+          }
+        }
+      }
+    }
+  }
+  
+  // Get exercise names from schedule
+  const allExercises = {};
+  for (const s of Object.values(SCHEDULE)) {
+    if (s.exercises) s.exercises.forEach(e => allExercises[e.id] = e.name);
+  }
+  
+  if (Object.keys(records).length === 0) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px;">Пока нет данных. Начни заполнять подходы!</div>';
+    return;
+  }
+  
+  let html = '<div style="background:var(--surface);border-radius:var(--radius);padding:8px;">';
+  for (const [key, rec] of Object.entries(records)) {
+    const exId = key.replace('_time', '');
+    const name = allExercises[exId] || exId;
+    const val = rec.seconds ? `${rec.seconds} сек` : `${rec.weight} кг × ${rec.reps}`;
+    html += `<div class="record-card">
+      <div>
+        <div class="record-name">${name}</div>
+        <div class="record-date">${rec.date}</div>
+      </div>
+      <div class="record-val">${val}</div>
+    </div>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function renderBestMeasures() {
+  const container = document.getElementById('bestMeasuresContainer');
+  const allMeasures = Object.entries(data.measurements);
+  
+  if (allMeasures.length === 0) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px;">Пока нет замеров</div>';
+    return;
+  }
+  
+  // For weight and belly - best is lowest. For chest, biceps - best is highest
+  const bestConfig = {
+    weight: { label: 'Вес (кг)', best: 'min' },
+    belly: { label: 'Живот', best: 'min' },
+    bellyHard: { label: 'Живот жёсткий', best: 'min' },
+    bellyIn: { label: 'Живот вдох', best: 'min' },
+    chestOut: { label: 'Грудь выдох', best: 'max' },
+    chestIn: { label: 'Грудь вдох', best: 'max' },
+    biceps: { label: 'Бицепс', best: 'max' },
+    leg: { label: 'Нога правая', best: 'max' },
+    ass: { label: 'Задница', best: 'max' },
+  };
+  
+  let html = '<div style="background:var(--surface);border-radius:var(--radius);padding:8px;">';
+  
+  for (const [field, config] of Object.entries(bestConfig)) {
+    let bestVal = null;
+    let bestDate = null;
+    
+    for (const [dateKey, m] of allMeasures) {
+      if (m[field] !== undefined && m[field] > 0) {
+        if (bestVal === null || 
+            (config.best === 'min' && m[field] < bestVal) ||
+            (config.best === 'max' && m[field] > bestVal)) {
+          bestVal = m[field];
+          bestDate = dateKey;
+        }
+      }
+    }
+    
+    if (bestVal !== null) {
+      html += `<div class="record-card">
+        <div>
+          <div class="record-name">${config.label}</div>
+          <div class="record-date">${bestDate}</div>
+        </div>
+        <div class="record-val">${bestVal}</div>
+      </div>`;
+    }
+  }
+  
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ========== DAY DETAIL MODAL ==========
+function openDayModal(ds) {
+  const modal = document.getElementById('dayModal');
+  const w = data.workouts[ds];
+  if (!w) return;
+  
+  const dt = new Date(ds + 'T12:00:00');
+  const schedule = getSchedule(dt);
+  
+  document.getElementById('modalTitle').textContent = schedule ? schedule.name : 'Тренировка';
+  document.getElementById('modalSubtitle').textContent = `${DAY_NAMES[dt.getDay()]}, ${dt.getDate()} ${MONTH_NAMES[dt.getMonth()].toLowerCase()} ${dt.getFullYear()}`;
+  
+  let html = '';
+  
+  // Measurements
+  if (w.isMeasure && data.measurements[ds]) {
+    const m = data.measurements[ds];
+    for (const f of MEASURE_FIELDS) {
+      if (m[f.id]) {
+        html += `<div class="modal-ex">
+          <div class="modal-ex-name">${f.label}: <span style="color:var(--accent);font-weight:800;">${m[f.id]}</span></div>
+        </div>`;
+      }
+    }
+  }
+  
+  // Exercises
+  if (w.exercises && schedule && schedule.exercises) {
+    for (const ex of schedule.exercises) {
+      const exData = w.exercises[ex.id];
+      const isDone = exData && exData.done;
+      
+      html += `<div class="modal-ex">
+        <div class="modal-ex-name">
+          ${ex.name}
+          <span class="modal-badge ${isDone?'done':'missed'}">${isDone?'✓':'—'}</span>
+        </div>`;
+      
+      if (exData && exData.sets && exData.sets.length > 0) {
+        const setsStr = exData.sets.map((s, i) => {
+          if (s.seconds) return `${i+1}) ${s.seconds} сек`;
+          if (s.weight > 0) return `${i+1}) ${s.weight} кг × ${s.reps}`;
+          if (s.reps > 0) return `${i+1}) ${s.reps} повт`;
+          return '';
+        }).filter(Boolean).join(' &nbsp;·&nbsp; ');
+        html += `<div class="modal-ex-sets">${setsStr}</div>`;
+      }
+      
+      if (exData && exData.doneAt) {
+        html += `<div style="font-size:11px;color:var(--text3);margin-top:4px;">в ${exData.doneAt}</div>`;
+      }
+      
+      html += `</div>`;
+    }
+  }
+  
+  // Run
+  if (w.run && w.run.distance > 0) {
+    html += `<div class="modal-ex">
+      <div class="modal-ex-name">🏃 Бег</div>
+      <div class="modal-ex-sets">${w.run.distance} км${w.run.pace ? ' · темп ' + w.run.pace : ''}</div>
+    </div>`;
+  }
+  
+  if (w.completedAt) {
+    html += `<div style="font-size:12px;color:var(--green);margin-top:12px;text-align:center;">✓ Завершено</div>`;
+  }
+  
+  document.getElementById('modalContent').innerHTML = html;
+  modal.classList.add('open');
+}
+
+function closeDayModal(e) {
+  if (e.target === document.getElementById('dayModal')) {
+    document.getElementById('dayModal').classList.remove('open');
+  }
+}
+
+// ========== TEST NOTIFICATION ==========
+function testNotification() {
+  if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      new Notification('Тест! 💪', { body: 'Уведомления работают. Не забудь тренировку!' });
+    } else if (Notification.permission === 'default') {
+      Notification.requestPermission().then(perm => {
+        if (perm === 'granted') {
+          new Notification('Тест! 💪', { body: 'Уведомления включены и работают!' });
+        }
+        renderAnalytics();
+      });
+    } else {
+      alert('Уведомления заблокированы. Разреши их в настройках Safari для этого сайта.');
+    }
+  } else {
+    alert('Браузер не поддерживает уведомления');
+  }
+}
 async function requestNotif() {
   if ('Notification' in window) {
     const perm = await Notification.requestPermission();
@@ -1269,6 +1643,10 @@ if ('serviceWorker' in navigator) {
 
 // ========== INIT ==========
 loadData();
+if (!data._startDate) {
+  data._startDate = todayStr();
+  saveData();
+}
 render();
 
 // Check notifications every 30 min if page is open

@@ -1321,7 +1321,7 @@ function renderMeasurePage(dateKey) {
   for (const f of MEASURE_FIELDS) {
     html += `<div class="measure-item ${f.full?'full':''}">
       <label>${f.label}</label>
-      <input type="number" inputmode="decimal" step="0.1" value="${mData[f.id]||''}" 
+      <input type="text" inputmode="decimal" value="${mData[f.id]||''}"
         data-field="${f.id}" placeholder="—">
     </div>`;
   }
@@ -1437,7 +1437,7 @@ function saveMeasures(dateKey) {
   const mData = {};
   let hasData = false;
   inputs.forEach(inp => {
-    const val = parseFloat(inp.value);
+    const val = parseFloat(String(inp.value).replace(',','.'));
     if (!isNaN(val) && val > 0) {
       mData[inp.dataset.field] = val;
       hasData = true;

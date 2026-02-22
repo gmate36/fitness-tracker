@@ -1109,7 +1109,6 @@ function render() {
   const dateLabel = `${DAY_NAMES[dow]}, ${viewDate.getDate()} ${MONTH_NAMES[viewDate.getMonth()].toLowerCase()}`;
   document.getElementById('dateStr').textContent = isToday ? dateLabel + ' · сегодня' : dateLabel;
   document.getElementById('todayBtn').style.display = isToday ? 'none' : 'inline-block';
-  document.getElementById('dateNextBtn').disabled = isToday;
 
   // Banner - check yesterday (only when viewing today)
   const banner = document.getElementById('banner');
@@ -1455,11 +1454,6 @@ function saveMeasures(dateKey) {
 // ========== DATE NAVIGATION ==========
 function navigateDate(offset) {
   selectedDate.setDate(selectedDate.getDate() + offset);
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const sel = new Date(selectedDate);
-  sel.setHours(0,0,0,0);
-  if (sel > today) selectedDate = new Date();
   openExercise = null;
   render();
 }
